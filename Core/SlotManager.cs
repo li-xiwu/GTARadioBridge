@@ -40,22 +40,23 @@ public class SlotManager : IDisposable
 
     public SlotManager(AppSettings settings)
     {
-        _settings = settings;
-        _capture = new AudioCaptureService();
-        _monitor = new GTAMonitor(settings.UserMusicPath);
+        _settings  = settings;
+        _capture   = new AudioCaptureService();
+        _monitor   = new GTAMonitor(settings.UserMusicPath);
         _nowPlaying = new NowPlayingWatcher();
 
-        _slotPaths = Enumerable.Range(0, settings.SlotCount)
-            .Select(i => Path.Combine(settings.UserMusicPath, $"gbridge_slot_{i:D2}.mp3"))
+        _slotPaths  = Enumerable.Range(0, settings.SlotCount)
+            .Select(i => Path.Combine(
+                settings.UserMusicPath, $"gbridge_slot_{i:D2}.mp3"))
             .ToArray();
 
         _slotStates = new SlotState[settings.SlotCount];
         _slotTracks = new NowPlayingWatcher.TrackInfo[settings.SlotCount];
 
-        _capture.OnError += msg => Debug.WriteLine($"[Capture] {msg}");
+        _capture.OnError           += msg => Debug.WriteLine($"[Capture] {msg}");
         _capture.OnSilenceDetected += OnSilenceDetected;
         _monitor.SlotStartedPlaying += OnSlotStartedPlaying;
-        _nowPlaying.TrackChanged += OnTrackChanged;
+        _nowPlaying.TrackChanged   += OnTrackChanged;
     }
 
     public async Task StartAsync()
@@ -98,11 +99,18 @@ public class SlotManager : IDisposable
     {
         if (slot >= _settings.SlotCount) slot = 0;
 
-        _captureSlot = slot;
-        _slotStates[slot] = SlotState.Capturing;
-        _slotTracks[slot] = _nowPlaying.CurrentTrack;
+        _captureSlot          = slot;
+        _slotStates[slot]     = SlotState.Capturing;
+        _slotTracks[slot]     = _nowPlaying.CurrentTrack;
 
         _capture.Start(_settings.BitRate, _settings.CaptureDeviceId);
+        _capture.GainFactor   = _settings.GainFactor;
+
+        // 立即预热下一个槽位
+        int next = (slot + 1) % _settings.SlotCount;
+        if (_slotStates[next] != SlotState.Playing)
+            _capture.PrewarmNext(_settings.BitRate, _settings.CaptureDeviceId);
+
         Debug.WriteLine($"[SlotManager] Capturing into slot {slot}");
         FireStatus();
     }
@@ -122,13 +130,59 @@ public class SlotManager : IDisposable
         {
             await File.WriteAllBytesAsync(_slotPaths[slot], mp3Data);
             _slotStates[slot] = SlotState.Ready;
-            Debug.WriteLine($"[SlotManager] Slot {slot} ready ({mp3Data.Length / 1024} KB)");
+            Debug.WriteLine(
+                $"[SlotManager] Slot {slot} ready ({mp3Data.Length / 1024} KB)");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[SlotManager] Failed to write slot {slot}: {ex.Message}");
+            Debug.WriteLine($"[SlotManager] Write failed: {ex.Message}");
             _slotStates[slot] = SlotState.Empty;
         }
+
+        FireStatus();
+    }
+
+    private async Task RotateSlotAsync(int finishedSlot, int nextSlot)
+    {
+        Debug.WriteLine(
+            $"[SlotManager] Rotating: slot {finishedSlot} → {nextSlot}");
+
+        // 无缝切换：新录制已在 PrewarmNext 中提前启动
+        var mp3Data = _capture.SwapToNext();
+
+        // 更新状态
+        _captureSlot              = nextSlot;
+        _slotStates[nextSlot]     = SlotState.Capturing;
+        _slotTracks[nextSlot]     = _nowPlaying.CurrentTrack;
+        _capture.GainFactor       = _settings.GainFactor;
+
+        FireStatus();
+
+        // 写入旧槽位数据
+        if (mp3Data.Length > 0)
+        {
+            try
+            {
+                await File.WriteAllBytesAsync(_slotPaths[finishedSlot], mp3Data);
+                _slotStates[finishedSlot] = SlotState.Ready;
+                Debug.WriteLine(
+                    $"[SlotManager] Slot {finishedSlot} ready ({mp3Data.Length / 1024} KB)");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SlotManager] Write failed: {ex.Message}");
+                _slotStates[finishedSlot] = SlotState.Empty;
+            }
+        }
+        else
+        {
+            _slotStates[finishedSlot] = SlotState.Empty;
+        }
+
+        // 预热下下个槽位
+        int nextNext = (nextSlot + 1) % _settings.SlotCount;
+        if (_slotStates[nextNext] != SlotState.Playing)
+            _capture.PrewarmNext(_settings.BitRate, _settings.CaptureDeviceId);
 
         FireStatus();
     }
@@ -139,36 +193,32 @@ public class SlotManager : IDisposable
         {
             if (!_running) return;
 
-            var captured = _capture.GetCapturedDuration(_settings.BitRate);
-            bool shouldRotate = captured.TotalSeconds >= 30;
+            var captured     = _capture.GetCapturedDuration(_settings.BitRate);
+            bool shouldRotate = captured.TotalSeconds >= 15;
 
             if (!shouldRotate && _playingSlot >= 0)
             {
-                var playingInfo = new FileInfo(_slotPaths[_playingSlot]);
-                if (playingInfo.Exists)
+                var info = new FileInfo(_slotPaths[_playingSlot]);
+                if (info.Exists)
                 {
-                    double totalSecs = playingInfo.Length / (_settings.BitRate * 1000.0 / 8.0);
-                    shouldRotate = captured.TotalSeconds >= Math.Max(20, totalSecs * 0.7);
+                    double totalSecs = info.Length / (_settings.BitRate * 1000.0 / 8.0);
+                    shouldRotate = captured.TotalSeconds >=
+                        Math.Max(15, totalSecs * 0.5);
                 }
             }
 
             if (shouldRotate && _slotStates[_captureSlot] == SlotState.Capturing)
             {
-                int currentSlot = _captureSlot;
-                int nextSlot = (currentSlot + 1) % _settings.SlotCount;
-
-                if (_slotStates[nextSlot] != SlotState.Playing)
-                    _ = RotateSlotAsync(currentSlot, nextSlot);
+                int next = (_captureSlot + 1) % _settings.SlotCount;
+                if (_slotStates[next] != SlotState.Playing &&
+                    _slotStates[next] != SlotState.Capturing)
+                {
+                    _ = RotateSlotAsync(_captureSlot, next);
+                }
             }
 
             FireStatus();
         }
-    }
-
-    private async Task RotateSlotAsync(int finishedSlot, int nextSlot)
-    {
-        await FinaliseCurrentCaptureAsync(finishedSlot);
-        BeginCaptureIntoSlot(nextSlot);
     }
 
     private void OnSlotStartedPlaying(string slotFileName)
@@ -177,20 +227,20 @@ public class SlotManager : IDisposable
         {
             for (int i = 0; i < _slotPaths.Length; i++)
             {
-                if (string.Equals(Path.GetFileName(_slotPaths[i]), slotFileName,
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    if (_playingSlot >= 0 && _playingSlot != i)
-                        _slotStates[_playingSlot] = SlotState.Spent;
+                if (!string.Equals(Path.GetFileName(_slotPaths[i]),
+                    slotFileName, StringComparison.OrdinalIgnoreCase)) continue;
 
-                    _playingSlot = i;
-                    if (_slotStates[i] != SlotState.Capturing)
-                        _slotStates[i] = SlotState.Playing;
+                if (_playingSlot >= 0 && _playingSlot != i)
+                    _slotStates[_playingSlot] = SlotState.Spent;
 
-                    NowPlayingChanged?.Invoke(_slotTracks[i]);
-                    FireStatus();
-                    return;
-                }
+                _playingSlot = i;
+                if (_slotStates[i] != SlotState.Capturing)
+                    _slotStates[i] = SlotState.Playing;
+
+                NowPlayingChanged?.Invoke(_slotTracks[i]);
+                Debug.WriteLine($"[SlotManager] GTA now playing slot {i}");
+                FireStatus();
+                return;
             }
         }
     }
@@ -209,12 +259,17 @@ public class SlotManager : IDisposable
     private void EnsureUserMusicPathExists()
     {
         try { Directory.CreateDirectory(_settings.UserMusicPath); }
-        catch (Exception ex) { Debug.WriteLine($"[SlotManager] Cannot create dir: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SlotManager] Cannot create dir: {ex.Message}");
+        }
     }
 
     private void FireStatus()
     {
-        var captured = _running ? _capture.GetCapturedDuration(_settings.BitRate) : TimeSpan.Zero;
+        var captured = _running
+            ? _capture.GetCapturedDuration(_settings.BitRate)
+            : TimeSpan.Zero;
         StatusChanged?.Invoke(new BridgeStatus(
             _running, _captureSlot, _playingSlot,
             (SlotState[])_slotStates.Clone(),
