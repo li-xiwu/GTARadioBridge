@@ -1,0 +1,266 @@
+<Window x:Class="GTARadioBridge.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="GTA Radio Bridge"
+        Width="520" Height="540"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="#1A1A2E">
+
+    <Window.Resources>
+        <!-- Colors -->
+        <SolidColorBrush x:Key="AccentBrush"   Color="#C7A14C"/>
+        <SolidColorBrush x:Key="SurfaceBrush"  Color="#16213E"/>
+        <SolidColorBrush x:Key="TextBrush"      Color="#E0E0E0"/>
+        <SolidColorBrush x:Key="SubtextBrush"   Color="#888"/>
+        <SolidColorBrush x:Key="GreenBrush"     Color="#4CAF50"/>
+        <SolidColorBrush x:Key="RedBrush"       Color="#F44336"/>
+
+        <!-- Card style -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background"       Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="CornerRadius"     Value="8"/>
+            <Setter Property="Padding"          Value="16"/>
+            <Setter Property="Margin"           Value="0,0,0,12"/>
+        </Style>
+
+        <!-- Label style -->
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource SubtextBrush}"/>
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="Margin"     Value="0,0,0,4"/>
+        </Style>
+
+        <!-- TextBox style -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background"   Value="#0D1B2A"/>
+            <Setter Property="Foreground"   Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush"  Value="#333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"      Value="8,6"/>
+            <Setter Property="FontSize"     Value="13"/>
+        </Style>
+
+        <!-- ComboBox style -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Background"   Value="#0D1B2A"/>
+            <Setter Property="Foreground"   Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush"  Value="#333"/>
+            <Setter Property="Padding"      Value="8,6"/>
+            <Setter Property="FontSize"     Value="13"/>
+        </Style>
+
+        <!-- Primary button -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background"       Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground"       Value="#1A1A2E"/>
+            <Setter Property="FontWeight"       Value="SemiBold"/>
+            <Setter Property="FontSize"         Value="13"/>
+            <Setter Property="Padding"          Value="20,10"/>
+            <Setter Property="BorderThickness"  Value="0"/>
+            <Setter Property="Cursor"           Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#E0B85A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#A8873A"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#555"/>
+                                <Setter Property="Foreground" Value="#888"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary button -->
+        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Background" Value="#2A2A4A"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#3A3A5A"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="GTA Radio Bridge"
+                       Foreground="{StaticResource AccentBrush}"
+                       FontSize="22" FontWeight="Bold"/>
+            <TextBlock Text="Streams Apple Music into GTA V Self Radio"
+                       Foreground="{StaticResource SubtextBrush}"
+                       FontSize="12" Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <!-- Status card -->
+        <Border Grid.Row="1" Style="{StaticResource Card}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock x:Name="StatusText"
+                               Text="Idle"
+                               Foreground="{StaticResource TextBrush}"
+                               FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="NowPlayingText"
+                               Text="Not playing"
+                               Foreground="{StaticResource SubtextBrush}"
+                               FontSize="12" Margin="0,4,0,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="CapturedText"
+                               Text=""
+                               Foreground="{StaticResource SubtextBrush}"
+                               FontSize="11" Margin="0,2,0,0"/>
+                </StackPanel>
+                <!-- Status dot -->
+                <Ellipse x:Name="StatusDot"
+                         Grid.Column="1"
+                         Width="12" Height="12"
+                         Fill="{StaticResource SubtextBrush}"
+                         VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- Slot indicators -->
+        <Border Grid.Row="2" Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Style="{StaticResource Label}" Text="SLOTS"/>
+                <ItemsControl x:Name="SlotList">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- Settings card -->
+        <Border Grid.Row="3" Style="{StaticResource Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="80"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- User Music Path -->
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="3"
+                           Style="{StaticResource Label}"
+                           Text="GTA V USER MUSIC PATH"/>
+                <TextBox    Grid.Row="0" Grid.Column="0" Margin="0,18,0,0"
+                            x:Name="PathBox"/>
+                <Button     Grid.Row="0" Grid.Column="2" Margin="0,18,0,0"
+                            Style="{StaticResource SecondaryButton}"
+                            Content="Browse"
+                            Padding="8,6"
+                            Click="BrowsePath_Click"/>
+
+                <!-- Bit rate -->
+                <TextBlock Grid.Row="2" Grid.ColumnSpan="3"
+                           Style="{StaticResource Label}"
+                           Text="MP3 BIT RATE (KBPS)"/>
+                <ComboBox   Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                            x:Name="BitRateBox">
+                    <ComboBoxItem Content="128"/>
+                    <ComboBoxItem Content="192" IsSelected="True"/>
+                    <ComboBoxItem Content="320"/>
+                </ComboBox>
+
+                <!-- Slot count -->
+                <TextBlock Grid.Row="4" Grid.ColumnSpan="3"
+                           Style="{StaticResource Label}"
+                           Text="NUMBER OF SLOTS"/>
+                <ComboBox   Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3"
+                            x:Name="SlotCountBox">
+                    <ComboBoxItem Content="2"/>
+                    <ComboBoxItem Content="3"/>
+                    <ComboBoxItem Content="4" IsSelected="True"/>
+                </ComboBox>
+
+                <!-- Auto start -->
+                <StackPanel Grid.Row="6" Grid.ColumnSpan="3"
+                            Orientation="Horizontal">
+                    <CheckBox x:Name="AutoStartCheck"
+                              Foreground="{StaticResource TextBrush}"
+                              FontSize="13"
+                              VerticalAlignment="Center"
+                              Content="Start bridge automatically on launch"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Spacer / log area -->
+        <Border Grid.Row="4" Style="{StaticResource Card}">
+            <ScrollViewer x:Name="LogScroller" VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="LogText"
+                           Foreground="{StaticResource SubtextBrush}"
+                           FontFamily="Consolas"
+                           FontSize="11"
+                           TextWrapping="Wrap"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Bottom buttons -->
+        <Grid Grid.Row="5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0"
+                    x:Name="StartButton"
+                    Style="{StaticResource PrimaryButton}"
+                    Content="▶  Start Bridge"
+                    Click="Start_Click"/>
+            <Button Grid.Column="2"
+                    x:Name="StopButton"
+                    Style="{StaticResource SecondaryButton}"
+                    Content="■  Stop"
+                    IsEnabled="False"
+                    Click="Stop_Click"/>
+            <Button Grid.Column="4"
+                    Style="{StaticResource SecondaryButton}"
+                    Content="Save Settings"
+                    Click="SaveSettings_Click"/>
+        </Grid>
+    </Grid>
+</Window>
