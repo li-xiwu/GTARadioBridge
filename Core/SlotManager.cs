@@ -21,12 +21,14 @@ public class SlotManager : IDisposable
     private int _captureSlot = 0;
     private int _playingSlot = -1;
     private bool _running;
+    private bool _isRotating = false;
 
     private Timer? _monitorTimer;
     private readonly object _stateLock = new();
 
     public event Action<BridgeStatus>? StatusChanged;
     public event Action<NowPlayingWatcher.TrackInfo?>? NowPlayingChanged;
+    public event Action<string>? SlotStartedPlayingNotify;
 
     public enum SlotState { Empty, Capturing, Ready, Playing, Spent }
 
@@ -40,9 +42,9 @@ public class SlotManager : IDisposable
 
     public SlotManager(AppSettings settings)
     {
-        _settings  = settings;
-        _capture   = new AudioCaptureService();
-        _monitor   = new GTAMonitor(settings.UserMusicPath);
+        _settings   = settings;
+        _capture    = new AudioCaptureService();
+        _monitor    = new GTAMonitor(settings.UserMusicPath);
         _nowPlaying = new NowPlayingWatcher();
 
         _slotPaths  = Enumerable.Range(0, settings.SlotCount)
@@ -53,10 +55,10 @@ public class SlotManager : IDisposable
         _slotStates = new SlotState[settings.SlotCount];
         _slotTracks = new NowPlayingWatcher.TrackInfo[settings.SlotCount];
 
-        _capture.OnError           += msg => Debug.WriteLine($"[Capture] {msg}");
-        _capture.OnSilenceDetected += OnSilenceDetected;
+        _capture.OnError            += msg => Debug.WriteLine($"[Capture] {msg}");
+        _capture.OnSilenceDetected  += OnSilenceDetected;
         _monitor.SlotStartedPlaying += OnSlotStartedPlaying;
-        _nowPlaying.TrackChanged   += OnTrackChanged;
+        _nowPlaying.TrackChanged    += OnTrackChanged;
     }
 
     public async Task StartAsync()
@@ -95,6 +97,22 @@ public class SlotManager : IDisposable
         FireStatus();
     }
 
+    public void CleanupSlotFiles()
+    {
+        foreach (var path in _slotPaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[SlotManager] Failed to delete {path}: {ex.Message}");
+            }
+        }
+    }
+
     private void BeginCaptureIntoSlot(int slot)
     {
         if (slot >= _settings.SlotCount) slot = 0;
@@ -106,7 +124,6 @@ public class SlotManager : IDisposable
         _capture.Start(_settings.BitRate, _settings.CaptureDeviceId);
         _capture.GainFactor   = _settings.GainFactor;
 
-        // 立即预热下一个槽位
         int next = (slot + 1) % _settings.SlotCount;
         if (_slotStates[next] != SlotState.Playing)
             _capture.PrewarmNext(_settings.BitRate, _settings.CaptureDeviceId);
@@ -147,10 +164,8 @@ public class SlotManager : IDisposable
         Debug.WriteLine(
             $"[SlotManager] Rotating: slot {finishedSlot} → {nextSlot}");
 
-        // 无缝切换：新录制已在 PrewarmNext 中提前启动
         var mp3Data = _capture.SwapToNext();
 
-        // 更新状态
         _captureSlot              = nextSlot;
         _slotStates[nextSlot]     = SlotState.Capturing;
         _slotTracks[nextSlot]     = _nowPlaying.CurrentTrack;
@@ -158,7 +173,6 @@ public class SlotManager : IDisposable
 
         FireStatus();
 
-        // 写入旧槽位数据
         if (mp3Data.Length > 0)
         {
             try
@@ -179,7 +193,6 @@ public class SlotManager : IDisposable
             _slotStates[finishedSlot] = SlotState.Empty;
         }
 
-        // 预热下下个槽位
         int nextNext = (nextSlot + 1) % _settings.SlotCount;
         if (_slotStates[nextNext] != SlotState.Playing)
             _capture.PrewarmNext(_settings.BitRate, _settings.CaptureDeviceId);
@@ -193,7 +206,7 @@ public class SlotManager : IDisposable
         {
             if (!_running) return;
 
-            var captured     = _capture.GetCapturedDuration(_settings.BitRate);
+            var captured      = _capture.GetCapturedDuration(_settings.BitRate);
             bool shouldRotate = captured.TotalSeconds >= 15;
 
             if (!shouldRotate && _playingSlot >= 0)
@@ -207,13 +220,16 @@ public class SlotManager : IDisposable
                 }
             }
 
-            if (shouldRotate && _slotStates[_captureSlot] == SlotState.Capturing)
+            if (shouldRotate && !_isRotating &&
+                _slotStates[_captureSlot] == SlotState.Capturing)
             {
                 int next = (_captureSlot + 1) % _settings.SlotCount;
                 if (_slotStates[next] != SlotState.Playing &&
                     _slotStates[next] != SlotState.Capturing)
                 {
-                    _ = RotateSlotAsync(_captureSlot, next);
+                    _isRotating = true;
+                    _ = RotateSlotAsync(_captureSlot, next)
+                        .ContinueWith(_ => _isRotating = false);
                 }
             }
 
@@ -238,6 +254,11 @@ public class SlotManager : IDisposable
                     _slotStates[i] = SlotState.Playing;
 
                 NowPlayingChanged?.Invoke(_slotTracks[i]);
+                SlotStartedPlayingNotify?.Invoke(
+                    _slotTracks[i] != null
+                        ? $"{_slotTracks[i]!.Artist} – {_slotTracks[i]!.Title}"
+                        : "Unknown track");
+
                 Debug.WriteLine($"[SlotManager] GTA now playing slot {i}");
                 FireStatus();
                 return;

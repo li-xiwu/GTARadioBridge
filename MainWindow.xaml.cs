@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Win32;
 using GTARadioBridge.Core;
 using GTARadioBridge.Models;
 
@@ -18,6 +19,10 @@ public partial class MainWindow : Window
     private readonly StringBuilder _log = new();
 
     public event Action<bool>? OnBridgeStateChanged;
+
+    private const string RegistryKey =
+        @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+    private const string RegistryValueName = "GTARadioBridge";
 
     private static readonly SolidColorBrush BrushCapturing =
         new(Color.FromRgb(0xC7, 0xA1, 0x4C));
@@ -34,9 +39,36 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = AppSettings.Load();
+        RestoreWindowPosition();
         LoadSettingsToUI();
         Log("Ready. Press Start Bridge to begin.");
         CheckVBCableOnStartup();
+
+        if (_settings.AutoStartCapture)
+            Dispatcher.BeginInvoke(async () =>
+            {
+                await Task.Delay(800);
+                Start_Click(this, new RoutedEventArgs());
+            });
+    }
+
+    private void RestoreWindowPosition()
+    {
+        if (_settings.WindowLeft >= 0 && _settings.WindowTop >= 0)
+        {
+            Left = _settings.WindowLeft;
+            Top  = _settings.WindowTop;
+        }
+        else
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
+    }
+
+    private void Window_LocationChanged(object sender, EventArgs e)
+    {
+        _settings.WindowLeft = Left;
+        _settings.WindowTop  = Top;
     }
 
     private void CheckVBCableOnStartup()
@@ -117,8 +149,9 @@ public partial class MainWindow : Window
         StopButton.IsEnabled  = true;
 
         _slotManager = new SlotManager(_settings);
-        _slotManager.StatusChanged     += OnStatusChanged;
-        _slotManager.NowPlayingChanged += OnNowPlayingChanged;
+        _slotManager.StatusChanged          += OnStatusChanged;
+        _slotManager.NowPlayingChanged      += OnNowPlayingChanged;
+        _slotManager.SlotStartedPlayingNotify += OnSlotStartedPlayingNotify;
 
         Log("Starting bridge...");
         try
@@ -132,6 +165,7 @@ public partial class MainWindow : Window
                 Log("⚠ 使用默认设备，游戏音效可能混入录音。");
 
             OnBridgeStateChanged?.Invoke(true);
+            ShowTrayNotification("GTA Radio Bridge", "Bridge 已启动");
         }
         catch (UnauthorizedAccessException)
         {
@@ -158,7 +192,6 @@ public partial class MainWindow : Window
     {
         if (_slotManager == null)
         {
-            // 确保 UI 状态正确
             if (Dispatcher.CheckAccess())
             {
                 StartButton.IsEnabled = true;
@@ -171,16 +204,12 @@ public partial class MainWindow : Window
         var mgr = _slotManager;
         _slotManager = null;
 
-        // 在后台线程执行，避免阻塞 UI
         await Task.Run(() =>
         {
-            try { mgr.Stop(); }
-            catch { }
-            try { mgr.Dispose(); }
-            catch { }
+            try { mgr.Stop(); }  catch { }
+            try { mgr.Dispose(); } catch { }
         });
 
-        // 回到 UI 线程更新界面
         void UpdateUI()
         {
             StartButton.IsEnabled = true;
@@ -191,13 +220,12 @@ public partial class MainWindow : Window
             CapturedText.Text     = "";
         }
 
-        if (Dispatcher.CheckAccess())
-            UpdateUI();
-        else
-            Dispatcher.Invoke(UpdateUI);
+        if (Dispatcher.CheckAccess()) UpdateUI();
+        else Dispatcher.Invoke(UpdateUI);
 
         Log("Bridge stopped.");
         OnBridgeStateChanged?.Invoke(false);
+        ShowTrayNotification("GTA Radio Bridge", "Bridge 已停止");
     }
 
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -225,6 +253,80 @@ public partial class MainWindow : Window
         GainLabel.Text = $"{e.NewValue:F1}x";
         if (_slotManager != null)
             _settings.GainFactor = (float)e.NewValue;
+    }
+
+    private void StartWithWindows_Changed(object sender, RoutedEventArgs e)
+    {
+        bool enable = StartWithWindowsCheck.IsChecked == true;
+        SetStartWithWindows(enable);
+    }
+
+    private void ExportLog_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SaveFileDialog
+        {
+            Filter   = "Text files (*.txt)|*.txt",
+            FileName = $"GTARadioBridge_log_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                File.WriteAllText(dialog.FileName, _log.ToString());
+                Log($"Log exported to {dialog.FileName}");
+            }
+            catch (Exception ex)
+            {
+                Log($"Export failed: {ex.Message}");
+            }
+        }
+    }
+
+    // ── Start with Windows ────────────────────────────────────────────────────
+
+    private static void SetStartWithWindows(bool enable)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryKey, true);
+            if (key == null) return;
+
+            if (enable)
+            {
+                var exe = System.Diagnostics.Process
+                    .GetCurrentProcess().MainModule?.FileName ?? "";
+                key.SetValue(RegistryValueName, $"\"{exe}\"");
+            }
+            else
+            {
+                key.DeleteValue(RegistryValueName, false);
+            }
+        }
+        catch { }
+    }
+
+    private static bool GetStartWithWindows()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryKey, false);
+            return key?.GetValue(RegistryValueName) != null;
+        }
+        catch { return false; }
+    }
+
+    // ── Tray notification ─────────────────────────────────────────────────────
+
+    public Action<string, string>? TrayNotify { get; set; }
+
+    private void ShowTrayNotification(string title, string text)
+    {
+        TrayNotify?.Invoke(title, text);
+    }
+
+    private void OnSlotStartedPlayingNotify(string trackName)
+    {
+        ShowTrayNotification("Now Playing in GTA", trackName);
     }
 
     // ── Status updates ────────────────────────────────────────────────────────
@@ -297,10 +399,12 @@ public partial class MainWindow : Window
 
     private void LoadSettingsToUI()
     {
-        PathBox.Text             = _settings.UserMusicPath;
-        AutoStartCheck.IsChecked = _settings.AutoStartCapture;
-        GainSlider.Value         = _settings.GainFactor;
-        GainLabel.Text           = $"{_settings.GainFactor:F1}x";
+        PathBox.Text                    = _settings.UserMusicPath;
+        AutoStartCheck.IsChecked        = _settings.AutoStartCapture;
+        StartWithWindowsCheck.IsChecked = GetStartWithWindows();
+        CleanupOnExitCheck.IsChecked    = _settings.CleanupOnExit;
+        GainSlider.Value                = _settings.GainFactor;
+        GainLabel.Text                  = $"{_settings.GainFactor:F1}x";
 
         SelectComboByContent(BitRateBox,   _settings.BitRate.ToString());
         SelectComboByContent(SlotCountBox, _settings.SlotCount.ToString());
@@ -323,6 +427,7 @@ public partial class MainWindow : Window
     {
         _settings.UserMusicPath    = PathBox.Text.Trim();
         _settings.AutoStartCapture = AutoStartCheck.IsChecked == true;
+        _settings.CleanupOnExit    = CleanupOnExitCheck.IsChecked == true;
         _settings.GainFactor       = (float)GainSlider.Value;
 
         if (int.TryParse(
@@ -363,10 +468,8 @@ public partial class MainWindow : Window
             LogScroller.ScrollToEnd();
         }
 
-        if (Dispatcher.CheckAccess())
-            Write();
-        else
-            Dispatcher.Invoke(Write);
+        if (Dispatcher.CheckAccess()) Write();
+        else Dispatcher.Invoke(Write);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -394,6 +497,9 @@ public partial class MainWindow : Window
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         e.Cancel = true;
+        _settings.Save();
+        if (_settings.CleanupOnExit)
+            _slotManager?.CleanupSlotFiles();
         Hide();
     }
 }

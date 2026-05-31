@@ -11,8 +11,12 @@ public class AppSettings
     public int PreloadThresholdSeconds { get; set; } = 20;
     public int BitRate { get; set; } = 192;
     public bool AutoStartCapture { get; set; } = false;
+    public bool StartWithWindows { get; set; } = false;
+    public bool CleanupOnExit { get; set; } = false;
     public string CaptureDeviceId { get; set; } = "default";
     public float GainFactor { get; set; } = 2.0f;
+    public double WindowLeft { get; set; } = -1;
+    public double WindowTop { get; set; } = -1;
 
     private static string GetDefaultUserMusicPath()
     {
@@ -31,7 +35,8 @@ public class AppSettings
             if (File.Exists(SettingsFilePath))
             {
                 var json = File.ReadAllText(SettingsFilePath);
-                return JsonConvert.DeserializeObject<AppSettings>(json) ?? new AppSettings();
+                return JsonConvert.DeserializeObject<AppSettings>(json)
+                    ?? new AppSettings();
             }
         }
         catch { }

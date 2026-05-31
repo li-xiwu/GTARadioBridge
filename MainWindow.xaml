@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GTA Radio Bridge"
-        Width="520" Height="640"
+        Width="520" Height="680"
         ResizeMode="CanMinimize"
-        WindowStartupLocation="CenterScreen"
-        Background="#1A1A2E">
+        WindowStartupLocation="Manual"
+        Background="#1A1A2E"
+        LocationChanged="Window_LocationChanged">
 
     <Window.Resources>
         <SolidColorBrush x:Key="AccentBrush"  Color="#C7A14C"/>
@@ -260,6 +261,8 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="12"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -335,15 +338,31 @@
                                HorizontalAlignment="Right"/>
                 </Grid>
 
-                <!-- Auto start -->
-                <StackPanel Grid.Row="10" Grid.ColumnSpan="3"
-                            Orientation="Horizontal">
+                <!-- Checkboxes -->
+                <StackPanel Grid.Row="10" Grid.ColumnSpan="3" Orientation="Vertical">
                     <CheckBox x:Name="AutoStartCheck"
                               Foreground="{StaticResource TextBrush}"
-                              FontSize="13"
-                              VerticalAlignment="Center"
+                              FontSize="13" Margin="0,0,0,6"
                               Content="Start bridge automatically on launch"/>
+                    <CheckBox x:Name="StartWithWindowsCheck"
+                              Foreground="{StaticResource TextBrush}"
+                              FontSize="13" Margin="0,0,0,6"
+                              Content="Start with Windows"
+                              Checked="StartWithWindows_Changed"
+                              Unchecked="StartWithWindows_Changed"/>
+                    <CheckBox x:Name="CleanupOnExitCheck"
+                              Foreground="{StaticResource TextBrush}"
+                              FontSize="13"
+                              Content="Delete slot files on exit"/>
                 </StackPanel>
+
+                <!-- Log export -->
+                <Button Grid.Row="12" Grid.ColumnSpan="3"
+                        Style="{StaticResource SecondaryButton}"
+                        Content="Export Log"
+                        Padding="8,6"
+                        HorizontalAlignment="Left"
+                        Click="ExportLog_Click"/>
             </Grid>
         </Border>
 

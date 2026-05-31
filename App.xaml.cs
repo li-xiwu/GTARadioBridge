@@ -17,13 +17,18 @@ public partial class App : Application
         BuildTrayIcon();
         _mainWindow.Show();
 
-        // 监听 bridge 状态变化，同步更新托盘菜单文字
         _mainWindow.OnBridgeStateChanged += isRunning =>
         {
             if (_bridgeToggleItem != null)
                 _bridgeToggleItem.Text = isRunning
                     ? "■  Stop Bridge"
                     : "▶  Start Bridge";
+        };
+
+        _mainWindow.TrayNotify += (title, text) =>
+        {
+            _trayIcon?.ShowBalloonTip(3000, title, text,
+                ToolTipIcon.None);
         };
     }
 
