@@ -8,17 +8,23 @@ public partial class App : Application
 {
     private NotifyIcon? _trayIcon;
     private MainWindow? _mainWindow;
+    private ToolStripMenuItem? _bridgeToggleItem;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-
         _mainWindow = new MainWindow();
-
         BuildTrayIcon();
-
-        // Show window on first launch
         _mainWindow.Show();
+
+        // 监听 bridge 状态变化，同步更新托盘菜单文字
+        _mainWindow.OnBridgeStateChanged += isRunning =>
+        {
+            if (_bridgeToggleItem != null)
+                _bridgeToggleItem.Text = isRunning
+                    ? "■  Stop Bridge"
+                    : "▶  Start Bridge";
+        };
     }
 
     private void BuildTrayIcon()
@@ -35,6 +41,13 @@ public partial class App : Application
         var openItem = new ToolStripMenuItem("Open");
         openItem.Click += (_, _) => ShowWindow();
 
+        _bridgeToggleItem = new ToolStripMenuItem("▶  Start Bridge");
+        _bridgeToggleItem.Click += (_, _) =>
+        {
+            ShowWindow();
+            _mainWindow?.ToggleBridge();
+        };
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) =>
         {
@@ -43,6 +56,7 @@ public partial class App : Application
         };
 
         menu.Items.Add(openItem);
+        menu.Items.Add(_bridgeToggleItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -60,7 +74,6 @@ public partial class App : Application
 
     private static System.Drawing.Icon LoadIcon()
     {
-        // Use a built-in system icon as fallback if custom icon is missing
         try
         {
             var iconPath = System.IO.Path.Combine(
@@ -70,7 +83,6 @@ public partial class App : Application
                 return new System.Drawing.Icon(iconPath);
         }
         catch { }
-
         return System.Drawing.SystemIcons.Application;
     }
 

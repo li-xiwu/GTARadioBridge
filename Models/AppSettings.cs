@@ -18,7 +18,7 @@ public class AppSettings
     {
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-            "Rockstar Games", "GTA V", "User Music");
+            "Rockstar Games", "GTAV Enhanced", "User Music");
     }
 
     private static string SettingsFilePath =>

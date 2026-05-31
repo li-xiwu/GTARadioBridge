@@ -16,6 +16,8 @@ public partial class MainWindow : Window
     private SlotManager? _slotManager;
     private readonly StringBuilder _log = new();
 
+    public event Action<bool>? OnBridgeStateChanged;
+
     private static readonly SolidColorBrush BrushCapturing =
         new(Color.FromRgb(0xC7, 0xA1, 0x4C));
     private static readonly SolidColorBrush BrushReady =
@@ -52,6 +54,16 @@ public partial class MainWindow : Window
         {
             Log("✓ 检测到虚拟声卡，请在 Capture Device 中选择 CABLE Output。");
         }
+    }
+
+    // ── Bridge toggle (called from tray) ─────────────────────────────────────
+
+    public void ToggleBridge()
+    {
+        if (_slotManager != null)
+            Stop_Click(this, new RoutedEventArgs());
+        else
+            Start_Click(this, new RoutedEventArgs());
     }
 
     // ── Button handlers ───────────────────────────────────────────────────────
@@ -114,6 +126,8 @@ public partial class MainWindow : Window
                 Log("✓ 已使用虚拟声卡隔离，录音不含游戏音效。");
             else
                 Log("⚠ 使用默认设备，游戏音效可能混入录音。");
+
+            OnBridgeStateChanged?.Invoke(true);
         }
         catch (UnauthorizedAccessException)
         {
@@ -145,6 +159,7 @@ public partial class MainWindow : Window
                 new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
         });
         Log("Bridge stopped.");
+        OnBridgeStateChanged?.Invoke(false);
     }
 
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
