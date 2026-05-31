@@ -23,12 +23,33 @@ public partial class MainWindow : Window
     private static readonly SolidColorBrush BrushSpent     = new(Color.FromRgb(0x33, 0x33, 0x33));
 
     public MainWindow()
+{
+    InitializeComponent();
+    _settings = AppSettings.Load();
+    LoadSettingsToUI();
+    Log("Ready. Press Start Bridge to begin.");
+
+    // 启动时检测虚拟声卡
+    CheckVBCableOnStartup();
+}
+
+private void CheckVBCableOnStartup()
+{
+    var devices = AudioCaptureService.GetOutputDevices();
+    bool hasVBCable = devices.Any(d =>
+        d.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
+        d.Name.Contains("CABLE", StringComparison.OrdinalIgnoreCase));
+
+    if (!hasVBCable)
     {
-        InitializeComponent();
-        _settings = AppSettings.Load();
-        LoadSettingsToUI();
-        Log("Ready. Press Start Bridge to begin.");
+        Log("⚠ 未检测到虚拟声卡（VB-Cable）。");
+        Log("  建议安装以隔离游戏音效，点击 Start Bridge 了解详情。");
     }
+    else
+    {
+        Log("✓ 检测到虚拟声卡，请在 Capture Device 中选择 CABLE Output。");
+    }
+}
 
     // ── Button handlers ───────────────────────────────────────────────────────
 

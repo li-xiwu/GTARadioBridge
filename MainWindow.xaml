@@ -36,12 +36,103 @@
         </Style>
 
         <Style TargetType="ComboBox">
-            <Setter Property="Background"  Value="#0D1B2A"/>
-            <Setter Property="Foreground"  Value="{StaticResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="#333"/>
-            <Setter Property="Padding"     Value="8,6"/>
-            <Setter Property="FontSize"    Value="13"/>
-        </Style>
+    <Setter Property="Background"            Value="#0D1B2A"/>
+    <Setter Property="Foreground"            Value="#E0E0E0"/>
+    <Setter Property="BorderBrush"           Value="#333"/>
+    <Setter Property="BorderThickness"       Value="1"/>
+    <Setter Property="Padding"               Value="8,6"/>
+    <Setter Property="FontSize"              Value="13"/>
+    <Setter Property="Template">
+        <Setter.Value>
+            <ControlTemplate TargetType="ComboBox">
+                <Grid>
+                    <ToggleButton Background="#0D1B2A"
+                                  BorderBrush="#333"
+                                  BorderThickness="1"
+                                  Foreground="#E0E0E0"
+                                  IsChecked="{Binding IsDropDownOpen,
+                                      Mode=TwoWay,
+                                      RelativeSource={RelativeSource TemplatedParent}}"
+                                  Padding="8,6">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ContentPresenter Grid.Column="0"
+                                                          Margin="8,6"
+                                                          VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="▾"
+                                                   Foreground="#888"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                    <ContentPresenter IsHitTestVisible="False"
+                                      Margin="9,6,30,6"
+                                      VerticalAlignment="Center"
+                                      Content="{TemplateBinding SelectionBoxItem}"
+                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                      TextElement.Foreground="#E0E0E0"/>
+                    <Popup IsOpen="{TemplateBinding IsDropDownOpen}"
+                           AllowsTransparency="True"
+                           Placement="Bottom"
+                           PopupAnimation="Slide">
+                        <Border Background="#16213E"
+                                BorderBrush="#444"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                MinWidth="{TemplateBinding ActualWidth}"
+                                MaxHeight="200">
+                            <ScrollViewer>
+                                <ItemsPresenter/>
+                            </ScrollViewer>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </ControlTemplate>
+        </Setter.Value>
+    </Setter>
+    <Setter Property="ItemContainerStyle">
+        <Setter.Value>
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Background"  Value="#16213E"/>
+                <Setter Property="Foreground"  Value="#E0E0E0"/>
+                <Setter Property="Padding"     Value="8,6"/>
+                <Setter Property="FontSize"    Value="13"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Border Background="{TemplateBinding Background}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter Property="Background" Value="#2A3A5A"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#1E3A5A"/>
+                                    <Setter Property="Foreground" Value="#C7A14C"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Setter.Value>
+    </Setter>
+</Style>
 
         <Style x:Key="PrimaryButton" TargetType="Button">
             <Setter Property="Background"      Value="{StaticResource AccentBrush}"/>
