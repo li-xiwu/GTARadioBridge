@@ -1,17 +1,14 @@
+using System;
+using System.IO;
+using System.Threading;
+using System.Diagnostics;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Parsers;
+using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 using Microsoft.Diagnostics.Tracing.Session;
-using System.Diagnostics;
 
 namespace GTARadioBridge.Core;
 
-/// <summary>
-/// Monitors GTA5.exe file I/O via ETW (Event Tracing for Windows) kernel events.
-/// Raises events when GTA starts reading a new slot file so the SlotManager
-/// can update its state without touching the game process.
-///
-/// NOTE: Requires the process to run as Administrator (ETW kernel provider needs elevation).
-/// </summary>
 public class GTAMonitor : IDisposable
 {
     private TraceEventSession? _session;
@@ -19,9 +16,8 @@ public class GTAMonitor : IDisposable
     private bool _running;
     private readonly string _userMusicPath;
 
-    public event Action<string, long>? SlotReadProgress;  // (slotFileName, byteOffset)
-    public event Action<string>? SlotStartedPlaying;      // slotFileName
-    public event Action? GTAExited;
+    public event Action<string, long>? SlotReadProgress;
+    public event Action<string>? SlotStartedPlaying;
 
     private string? _currentSlot;
     private const string SessionName = "GTARadioBridgeETW";
@@ -35,7 +31,6 @@ public class GTAMonitor : IDisposable
     {
         if (_running) return;
         _running = true;
-
         _thread = new Thread(RunETW) { IsBackground = true, Name = "ETWMonitor" };
         _thread.Start();
     }
@@ -47,32 +42,23 @@ public class GTAMonitor : IDisposable
         _thread?.Join(2000);
     }
 
-    // ── Private ──────────────────────────────────────────────────────────────
-
     private void RunETW()
     {
         try
         {
-            // Clean up any stale session from a previous crash
             TraceEventSession.GetActiveSession(SessionName)?.Stop();
-
             using (_session = new TraceEventSession(SessionName))
             {
                 _session.EnableKernelProvider(
                     KernelTraceEventParser.Keywords.FileIO |
                     KernelTraceEventParser.Keywords.FileIOInit);
 
-                _session.Source.Kernel.FileIORead += OnFileIORead;
+                _session.Source.Kernel.FileIORead   += OnFileIORead;
                 _session.Source.Kernel.FileIOCreate += OnFileIOCreate;
-
-                // Process() blocks until Stop() is called
                 _session.Source.Process();
             }
         }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[ETW] Error: {ex.Message}");
-        }
+        catch (Exception ex) { Debug.WriteLine($"[ETW] Error: {ex.Message}"); }
     }
 
     private void OnFileIORead(FileIOReadWriteTraceData data)
@@ -91,7 +77,6 @@ public class GTAMonitor : IDisposable
 
     private void OnFileIOCreate(FileIOCreateTraceData data)
     {
-        // GTA opening a slot file for the first time in this session
         if (!IsGTA(data.ProcessName)) return;
         if (!IsSlotFile(data.FileName, out string slotName)) return;
 
@@ -110,11 +95,9 @@ public class GTAMonitor : IDisposable
     {
         slotName = string.Empty;
         if (string.IsNullOrEmpty(fullPath)) return false;
-
         var lower = fullPath.ToLowerInvariant();
         if (!lower.Contains(_userMusicPath)) return false;
         if (!lower.Contains("gbridge_slot_")) return false;
-
         slotName = Path.GetFileName(fullPath);
         return true;
     }
