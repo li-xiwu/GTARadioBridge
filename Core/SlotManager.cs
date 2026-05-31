@@ -7,19 +7,6 @@ using GTARadioBridge.Models;
 
 namespace GTARadioBridge.Core;
 
-/// <summary>
-/// Central state machine.
-///
-/// Lifecycle:
-///   1. On Start(), begin capturing into slot 0.
-///   2. ETW tells us GTA started reading slot N  → mark N as Playing.
-///   3. When remaining time on slot N &lt; PreloadThresholdSeconds,
-///      stop current capture, save to slot N, start capturing into slot N+1.
-///   4. When GTA skips (cuts to slot N+1 before N finishes) → handled naturally.
-///   5. Native GTA skip key ( = ) causes GTA to jump to the next slot file in
-///      alphabetical order — we keep slots named gbridge_slot_00 … gbridge_slot_03
-///      so the ordering is predictable.
-/// </summary>
 public class SlotManager : IDisposable
 {
     private readonly AppSettings _settings;
@@ -31,8 +18,8 @@ public class SlotManager : IDisposable
     private readonly SlotState[] _slotStates;
     private readonly NowPlayingWatcher.TrackInfo?[] _slotTracks;
 
-    private int _captureSlot = 0;   // slot currently being written
-    private int _playingSlot = -1;  // slot GTA is currently reading
+    private int _captureSlot = 0;
+    private int _playingSlot = -1;
     private bool _running;
 
     private Timer? _monitorTimer;
@@ -65,12 +52,9 @@ public class SlotManager : IDisposable
         _slotStates = new SlotState[settings.SlotCount];
         _slotTracks = new NowPlayingWatcher.TrackInfo[settings.SlotCount];
 
-        // Wire events
         _capture.OnError += msg => Debug.WriteLine($"[Capture] {msg}");
         _capture.OnSilenceDetected += OnSilenceDetected;
-
         _monitor.SlotStartedPlaying += OnSlotStartedPlaying;
-
         _nowPlaying.TrackChanged += OnTrackChanged;
     }
 
@@ -88,9 +72,7 @@ public class SlotManager : IDisposable
         EnsureUserMusicPathExists();
         BeginCaptureIntoSlot(0);
 
-        // Poll every 500 ms to check if we should start preparing the next slot
         _monitorTimer = new Timer(OnMonitorTick, null, 500, 500);
-
         FireStatus();
     }
 
@@ -112,21 +94,15 @@ public class SlotManager : IDisposable
         FireStatus();
     }
 
-    // ── Core logic ────────────────────────────────────────────────────────────
-
     private void BeginCaptureIntoSlot(int slot)
     {
-        if (slot >= _settings.SlotCount)
-        {
-            Debug.WriteLine("[SlotManager] All slots filled, wrapping to 0");
-            slot = 0;
-        }
+        if (slot >= _settings.SlotCount) slot = 0;
 
         _captureSlot = slot;
         _slotStates[slot] = SlotState.Capturing;
         _slotTracks[slot] = _nowPlaying.CurrentTrack;
 
-        _capture.Start(_settings.BitRate);
+        _capture.Start(_settings.BitRate, _settings.CaptureDeviceId);
         Debug.WriteLine($"[SlotManager] Capturing into slot {slot}");
         FireStatus();
     }
@@ -137,7 +113,6 @@ public class SlotManager : IDisposable
 
         if (mp3Data.Length == 0)
         {
-            Debug.WriteLine($"[SlotManager] Slot {slot}: no data captured");
             _slotStates[slot] = SlotState.Empty;
             FireStatus();
             return;
@@ -164,23 +139,15 @@ public class SlotManager : IDisposable
         {
             if (!_running) return;
 
-            // How long have we been capturing the current slot?
             var captured = _capture.GetCapturedDuration(_settings.BitRate);
-
-            // If the slot GTA is playing will end soon, pre-finalise current capture
-            // and start filling the next slot early.
-            // Without ETW data yet (_playingSlot == -1), use captured duration as proxy.
-            bool shouldRotate = captured.TotalSeconds >= 30; // capture at least 30s per slot
+            bool shouldRotate = captured.TotalSeconds >= 30;
 
             if (!shouldRotate && _playingSlot >= 0)
             {
-                // More precise: estimate remaining time on playing slot
                 var playingInfo = new FileInfo(_slotPaths[_playingSlot]);
                 if (playingInfo.Exists)
                 {
                     double totalSecs = playingInfo.Length / (_settings.BitRate * 1000.0 / 8.0);
-                    // ETW offset tells us bytes read; approximate seconds remaining
-                    // (simplified: rotate when playing slot was last touched > threshold ago)
                     shouldRotate = captured.TotalSeconds >= Math.Max(20, totalSecs * 0.7);
                 }
             }
@@ -190,11 +157,8 @@ public class SlotManager : IDisposable
                 int currentSlot = _captureSlot;
                 int nextSlot = (currentSlot + 1) % _settings.SlotCount;
 
-                // Don't overwrite a slot GTA is currently playing
                 if (_slotStates[nextSlot] != SlotState.Playing)
-                {
                     _ = RotateSlotAsync(currentSlot, nextSlot);
-                }
             }
 
             FireStatus();
@@ -203,12 +167,9 @@ public class SlotManager : IDisposable
 
     private async Task RotateSlotAsync(int finishedSlot, int nextSlot)
     {
-        Debug.WriteLine($"[SlotManager] Rotating: finalising slot {finishedSlot}, next → {nextSlot}");
         await FinaliseCurrentCaptureAsync(finishedSlot);
         BeginCaptureIntoSlot(nextSlot);
     }
-
-    // ── Event handlers ────────────────────────────────────────────────────────
 
     private void OnSlotStartedPlaying(string slotFileName)
     {
@@ -219,7 +180,6 @@ public class SlotManager : IDisposable
                 if (string.Equals(Path.GetFileName(_slotPaths[i]), slotFileName,
                     StringComparison.OrdinalIgnoreCase))
                 {
-                    // Mark previous playing slot as spent
                     if (_playingSlot >= 0 && _playingSlot != i)
                         _slotStates[_playingSlot] = SlotState.Spent;
 
@@ -228,7 +188,6 @@ public class SlotManager : IDisposable
                         _slotStates[i] = SlotState.Playing;
 
                     NowPlayingChanged?.Invoke(_slotTracks[i]);
-                    Debug.WriteLine($"[SlotManager] GTA now playing slot {i}");
                     FireStatus();
                     return;
                 }
@@ -238,38 +197,28 @@ public class SlotManager : IDisposable
 
     private void OnTrackChanged(NowPlayingWatcher.TrackInfo track)
     {
-        // Record which track is going into the current capture slot
-        lock (_stateLock)
-        {
-            _slotTracks[_captureSlot] = track;
-        }
-        Debug.WriteLine($"[SlotManager] Track changed: {track.Artist} – {track.Title}");
+        lock (_stateLock) { _slotTracks[_captureSlot] = track; }
         FireStatus();
     }
 
     private void OnSilenceDetected()
     {
-        Debug.WriteLine("[SlotManager] Silence detected (Apple Music paused?)");
+        Debug.WriteLine("[SlotManager] Silence detected");
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void EnsureUserMusicPathExists()
     {
         try { Directory.CreateDirectory(_settings.UserMusicPath); }
-        catch (Exception ex) { Debug.WriteLine($"[SlotManager] Cannot create UserMusic dir: {ex.Message}"); }
+        catch (Exception ex) { Debug.WriteLine($"[SlotManager] Cannot create dir: {ex.Message}"); }
     }
 
     private void FireStatus()
     {
         var captured = _running ? _capture.GetCapturedDuration(_settings.BitRate) : TimeSpan.Zero;
         StatusChanged?.Invoke(new BridgeStatus(
-            _running,
-            _captureSlot,
-            _playingSlot,
+            _running, _captureSlot, _playingSlot,
             (SlotState[])_slotStates.Clone(),
-            captured,
-            _nowPlaying.CurrentTrack));
+            captured, _nowPlaying.CurrentTrack));
     }
 
     public void Dispose()

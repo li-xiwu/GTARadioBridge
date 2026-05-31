@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Diagnostics;
 using NAudio.CoreAudioApi;
 using NAudio.Lame;
@@ -24,16 +25,49 @@ public class AudioCaptureService : IDisposable
 
     public bool IsCapturing => _isCapturing;
 
-    public void Start(int bitRate = 192)
+    public static List<(string Id, string Name)> GetOutputDevices()
+    {
+        var result = new List<(string, string)>();
+        result.Add(("default", "Default (system audio)"));
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            var devices = enumerator.EnumerateAudioEndPoints(
+                DataFlow.Render, DeviceState.Active);
+            foreach (var d in devices)
+                result.Add((d.ID, d.FriendlyName));
+        }
+        catch { }
+        return result;
+    }
+
+    public void Start(int bitRate = 192, string deviceId = "default")
     {
         lock (_lock)
         {
             if (_isCapturing) return;
             try
             {
-                _capture = new WasapiLoopbackCapture();
+                if (deviceId == "default")
+                {
+                    _capture = new WasapiLoopbackCapture();
+                }
+                else
+                {
+                    using var enumerator = new MMDeviceEnumerator();
+                    MMDevice? device = null;
+                    try { device = enumerator.GetDevice(deviceId); }
+                    catch
+                    {
+                        OnError?.Invoke($"Device '{deviceId}' not found, falling back to default.");
+                        _capture = new WasapiLoopbackCapture();
+                    }
+                    if (device != null)
+                        _capture = new WasapiLoopbackCapture(device);
+                }
+
                 _mp3Stream = new MemoryStream();
-                _mp3Writer = new LameMP3FileWriter(_mp3Stream, _capture.WaveFormat, bitRate);
+                _mp3Writer = new LameMP3FileWriter(_mp3Stream, _capture!.WaveFormat, bitRate);
                 _capture.DataAvailable += OnDataAvailable;
                 _capture.RecordingStopped += OnRecordingStopped;
                 _capture.StartRecording();

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -43,11 +44,38 @@ public partial class MainWindow : Window
             return;
         }
 
+        // 检测虚拟声卡
+        var devices = AudioCaptureService.GetOutputDevices();
+        bool hasVBCable = devices.Any(d =>
+            d.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
+            d.Name.Contains("CABLE", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasVBCable && _settings.CaptureDeviceId == "default")
+        {
+            var result = MessageBox.Show(
+                "未检测到虚拟声卡（VB-Cable）。\n\n" +
+                "使用默认设备时，GTA 游戏音效会混入录音。\n" +
+                "安装 VB-Cable 后可将 Apple Music 与游戏音效完全隔离。\n\n" +
+                "是否前往下载页面？（免费，约 5 MB）\n\n" +
+                "点击「否」继续使用默认设备。",
+                "推荐安装虚拟声卡",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "https://vb-audio.com/Cable/") { UseShellExecute = true });
+                Log("已打开 VB-Cable 下载页面。安装完成后重启程序，在 Capture Device 中选择 CABLE Output。");
+                return;
+            }
+        }
+
         StartButton.IsEnabled = false;
         StopButton.IsEnabled  = true;
 
         _slotManager = new SlotManager(_settings);
-        _slotManager.StatusChanged   += OnStatusChanged;
+        _slotManager.StatusChanged     += OnStatusChanged;
         _slotManager.NowPlayingChanged += OnNowPlayingChanged;
 
         Log("Starting bridge...");
@@ -55,6 +83,11 @@ public partial class MainWindow : Window
         {
             await _slotManager.StartAsync();
             Log("Bridge running. Open GTA V and select Self Radio.");
+
+            if (hasVBCable && _settings.CaptureDeviceId != "default")
+                Log("✓ 已使用虚拟声卡隔离，录音不含游戏音效。");
+            else
+                Log("⚠ 使用默认设备，游戏音效可能混入录音。");
         }
         catch (UnauthorizedAccessException)
         {
@@ -98,7 +131,7 @@ public partial class MainWindow : Window
     {
         var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
-            Description = "Select GTA V User Music folder",
+            Description  = "Select GTA V User Music folder",
             SelectedPath = PathBox.Text
         };
         if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
@@ -111,8 +144,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            // Status dot
-            StatusDot.Fill = status.IsRunning ? BrushReady : BrushEmpty;
+            StatusDot.Fill  = status.IsRunning ? BrushReady : BrushEmpty;
             StatusText.Text = status.IsRunning
                 ? $"Running — capturing into slot {status.CaptureSlot}"
                 : "Idle";
@@ -121,132 +153,34 @@ public partial class MainWindow : Window
                 ? $"Captured: {status.CapturedSoFar:mm\\:ss}"
                 : "";
 
-            // Rebuild slot indicators
             SlotList.Items.Clear();
             for (int i = 0; i < status.States.Length; i++)
             {
                 var panel = new StackPanel
                 {
                     Orientation = Orientation.Vertical,
-                    Width = 60,
-                    Margin = new Thickness(0, 0, 8, 0)
+                    Width       = 60,
+                    Margin      = new Thickness(0, 0, 8, 0)
                 };
-
                 var dot = new Border
                 {
-                    Width = 40, Height = 40,
-                    CornerRadius = new CornerRadius(6),
-                    Background = SlotBrush(status.States[i]),
+                    Width               = 40, Height = 40,
+                    CornerRadius        = new CornerRadius(6),
+                    Background          = SlotBrush(status.States[i]),
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
-                var label = new TextBlock
+                dot.Child = new TextBlock
                 {
-                    Text = SlotLabel(status.States[i]),
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(Colors.White),
+                    Text                = SlotLabel(status.States[i]),
+                    FontSize            = 10,
+                    Foreground          = new SolidColorBrush(Colors.White),
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    TextAlignment = TextAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
+                    TextAlignment       = TextAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center
                 };
-                dot.Child = label;
-
-                var slotLabel = new TextBlock
-                {
-                    Text = $"Slot {i}",
-                    FontSize = 10,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 4, 0, 0)
-                };
-
                 panel.Children.Add(dot);
-                panel.Children.Add(slotLabel);
-                SlotList.Items.Add(panel);
-            }
-        });
-    }
-
-    private void OnNowPlayingChanged(NowPlayingWatcher.TrackInfo? track)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            NowPlayingText.Text = track != null
-                ? $"♪  {track.Artist} – {track.Title}"
-                : "Not playing";
-        });
-    }
-
-    // ── Settings helpers ──────────────────────────────────────────────────────
-
-    private void LoadSettingsToUI()
-    {
-        PathBox.Text = _settings.UserMusicPath;
-        AutoStartCheck.IsChecked = _settings.AutoStartCapture;
-
-        SelectComboByContent(BitRateBox,   _settings.BitRate.ToString());
-        SelectComboByContent(SlotCountBox, _settings.SlotCount.ToString());
-    }
-
-    private void ReadSettingsFromUI()
-    {
-        _settings.UserMusicPath = PathBox.Text.Trim();
-        _settings.AutoStartCapture = AutoStartCheck.IsChecked == true;
-
-        if (int.TryParse((BitRateBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int br))
-            _settings.BitRate = br;
-        if (int.TryParse((SlotCountBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int sc))
-            _settings.SlotCount = sc;
-    }
-
-    private static void SelectComboByContent(ComboBox box, string content)
-    {
-        foreach (ComboBoxItem item in box.Items)
-        {
-            if (item.Content?.ToString() == content)
-            {
-                box.SelectedItem = item;
-                return;
-            }
-        }
-    }
-
-    // ── Log ───────────────────────────────────────────────────────────────────
-
-    private void Log(string message)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
-            LogText.Text = _log.ToString();
-            LogScroller.ScrollToEnd();
-        });
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static SolidColorBrush SlotBrush(SlotManager.SlotState state) => state switch
-    {
-        SlotManager.SlotState.Capturing => BrushCapturing,
-        SlotManager.SlotState.Ready     => BrushReady,
-        SlotManager.SlotState.Playing   => BrushPlaying,
-        SlotManager.SlotState.Spent     => BrushSpent,
-        _                               => BrushEmpty
-    };
-
-    private static string SlotLabel(SlotManager.SlotState state) => state switch
-    {
-        SlotManager.SlotState.Capturing => "REC",
-        SlotManager.SlotState.Ready     => "RDY",
-        SlotManager.SlotState.Playing   => "▶",
-        SlotManager.SlotState.Spent     => "✓",
-        _                               => "—"
-    };
-
-    // ── Window close → minimise to tray ──────────────────────────────────────
-
-    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
-    {
-        e.Cancel = true;
-        Hide();
-    }
-}
+                panel.Children.Add(new TextBlock
+                {
+                    Text                = $"Slot {i}",
+                    FontSize            = 10,
+                    Foreground          = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
