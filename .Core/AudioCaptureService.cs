@@ -2,6 +2,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Lame;
 using NAudio.Wave;
 using System.Diagnostics;
+using System.IO;
 
 namespace GTARadioBridge.Core;
 
