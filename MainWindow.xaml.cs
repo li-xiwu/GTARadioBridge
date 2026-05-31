@@ -60,10 +60,13 @@ public partial class MainWindow : Window
 
     public void ToggleBridge()
     {
-        if (_slotManager != null)
-            Stop_Click(this, new RoutedEventArgs());
-        else
-            Start_Click(this, new RoutedEventArgs());
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_slotManager != null)
+                Stop_Click(this, new RoutedEventArgs());
+            else
+                Start_Click(this, new RoutedEventArgs());
+        });
     }
 
     // ── Button handlers ───────────────────────────────────────────────────────
@@ -150,14 +153,20 @@ public partial class MainWindow : Window
         _slotManager?.Dispose();
         _slotManager = null;
 
-        Dispatcher.Invoke(() =>
+        void UpdateUI()
         {
             StartButton.IsEnabled = true;
             StopButton.IsEnabled  = false;
             StatusText.Text       = "Idle";
             StatusDot.Fill        =
                 new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
-        });
+        }
+
+        if (Dispatcher.CheckAccess())
+            UpdateUI();
+        else
+            Dispatcher.Invoke(UpdateUI);
+
         Log("Bridge stopped.");
         OnBridgeStateChanged?.Invoke(false);
     }
