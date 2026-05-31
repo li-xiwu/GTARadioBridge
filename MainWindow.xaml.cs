@@ -184,3 +184,109 @@ public partial class MainWindow : Window
                     Text                = $"Slot {i}",
                     FontSize            = 10,
                     Foreground          = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin              = new Thickness(0, 4, 0, 0)
+                });
+                SlotList.Items.Add(panel);
+            }
+        });
+    }
+
+    private void OnNowPlayingChanged(NowPlayingWatcher.TrackInfo? track)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            NowPlayingText.Text = track != null
+                ? $"♪  {track.Artist} – {track.Title}"
+                : "Not playing";
+        });
+    }
+
+    // ── Settings helpers ──────────────────────────────────────────────────────
+
+    private void LoadSettingsToUI()
+    {
+        PathBox.Text             = _settings.UserMusicPath;
+        AutoStartCheck.IsChecked = _settings.AutoStartCapture;
+
+        SelectComboByContent(BitRateBox,   _settings.BitRate.ToString());
+        SelectComboByContent(SlotCountBox, _settings.SlotCount.ToString());
+
+        // 加载音频设备列表
+        DeviceBox.Items.Clear();
+        var devices = AudioCaptureService.GetOutputDevices();
+        foreach (var (id, name) in devices)
+        {
+            var item = new ComboBoxItem { Content = name, Tag = id };
+            DeviceBox.Items.Add(item);
+            if (id == _settings.CaptureDeviceId)
+                DeviceBox.SelectedItem = item;
+        }
+        if (DeviceBox.SelectedItem == null && DeviceBox.Items.Count > 0)
+            DeviceBox.SelectedIndex = 0;
+    }
+
+    private void ReadSettingsFromUI()
+    {
+        _settings.UserMusicPath    = PathBox.Text.Trim();
+        _settings.AutoStartCapture = AutoStartCheck.IsChecked == true;
+
+        if (int.TryParse((BitRateBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int br))
+            _settings.BitRate = br;
+        if (int.TryParse((SlotCountBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int sc))
+            _settings.SlotCount = sc;
+
+        if (DeviceBox.SelectedItem is ComboBoxItem deviceItem && deviceItem.Tag is string deviceId)
+            _settings.CaptureDeviceId = deviceId;
+    }
+
+    private static void SelectComboByContent(ComboBox box, string content)
+    {
+        foreach (ComboBoxItem item in box.Items)
+        {
+            if (item.Content?.ToString() == content)
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
+    }
+
+    // ── Log ───────────────────────────────────────────────────────────────────
+
+    private void Log(string message)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            LogText.Text = _log.ToString();
+            LogScroller.ScrollToEnd();
+        });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static SolidColorBrush SlotBrush(SlotManager.SlotState state) => state switch
+    {
+        SlotManager.SlotState.Capturing => BrushCapturing,
+        SlotManager.SlotState.Ready     => BrushReady,
+        SlotManager.SlotState.Playing   => BrushPlaying,
+        SlotManager.SlotState.Spent     => BrushSpent,
+        _                               => BrushEmpty
+    };
+
+    private static string SlotLabel(SlotManager.SlotState state) => state switch
+    {
+        SlotManager.SlotState.Capturing => "REC",
+        SlotManager.SlotState.Ready     => "RDY",
+        SlotManager.SlotState.Playing   => "▶",
+        SlotManager.SlotState.Spent     => "✓",
+        _                               => "—"
+    };
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        e.Cancel = true;
+        Hide();
+    }
+}
