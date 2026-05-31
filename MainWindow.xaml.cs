@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -63,7 +64,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(() =>
         {
             if (_slotManager != null)
-                Stop_Click(this, new RoutedEventArgs());
+                _ = StopBridgeAsync();
             else
                 Start_Click(this, new RoutedEventArgs());
         });
@@ -136,23 +137,50 @@ public partial class MainWindow : Window
         {
             Log("ERROR: ETW monitoring requires Administrator privileges.");
             Log("Right-click GTARadioBridge.exe → Run as administrator.");
-            StopBridge();
+            await StopBridgeAsync();
         }
         catch (Exception ex)
         {
             Log($"ERROR: {ex.Message}");
-            StopBridge();
+            await StopBridgeAsync();
         }
     }
 
-    private void Stop_Click(object sender, RoutedEventArgs e) => StopBridge();
-
-    private void StopBridge()
+    private void Stop_Click(object sender, RoutedEventArgs e)
     {
-        _slotManager?.Stop();
-        _slotManager?.Dispose();
+        StartButton.IsEnabled = false;
+        StopButton.IsEnabled  = false;
+        StatusText.Text       = "Stopping...";
+        _ = StopBridgeAsync();
+    }
+
+    private async Task StopBridgeAsync()
+    {
+        if (_slotManager == null)
+        {
+            // 确保 UI 状态正确
+            if (Dispatcher.CheckAccess())
+            {
+                StartButton.IsEnabled = true;
+                StopButton.IsEnabled  = false;
+                StatusText.Text       = "Idle";
+            }
+            return;
+        }
+
+        var mgr = _slotManager;
         _slotManager = null;
 
+        // 在后台线程执行，避免阻塞 UI
+        await Task.Run(() =>
+        {
+            try { mgr.Stop(); }
+            catch { }
+            try { mgr.Dispose(); }
+            catch { }
+        });
+
+        // 回到 UI 线程更新界面
         void UpdateUI()
         {
             StartButton.IsEnabled = true;
@@ -160,6 +188,7 @@ public partial class MainWindow : Window
             StatusText.Text       = "Idle";
             StatusDot.Fill        =
                 new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+            CapturedText.Text     = "";
         }
 
         if (Dispatcher.CheckAccess())
@@ -327,12 +356,17 @@ public partial class MainWindow : Window
 
     private void Log(string message)
     {
-        Dispatcher.Invoke(() =>
+        void Write()
         {
             _log.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
             LogText.Text = _log.ToString();
             LogScroller.ScrollToEnd();
-        });
+        }
+
+        if (Dispatcher.CheckAccess())
+            Write();
+        else
+            Dispatcher.Invoke(Write);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
