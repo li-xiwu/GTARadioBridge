@@ -7,11 +7,12 @@ namespace GTARadioBridge.Models;
 public class AppSettings
 {
     public string UserMusicPath { get; set; } = GetDefaultUserMusicPath();
-    public int SlotCount { get; set; } = 4;
-    public int PreloadThresholdSeconds { get; set; } = 15;
+    public int SlotCount { get; set; } = 6;
+    public int PreloadThresholdSeconds { get; set; } = 20;
     public int BitRate { get; set; } = 192;
     public bool AutoStartCapture { get; set; } = false;
     public string CaptureDeviceId { get; set; } = "default";
+    public float GainFactor { get; set; } = 2.0f;
 
     private static string GetDefaultUserMusicPath()
     {

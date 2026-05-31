@@ -16,40 +16,43 @@ public partial class MainWindow : Window
     private SlotManager? _slotManager;
     private readonly StringBuilder _log = new();
 
-    private static readonly SolidColorBrush BrushCapturing = new(Color.FromRgb(0xC7, 0xA1, 0x4C));
-    private static readonly SolidColorBrush BrushReady     = new(Color.FromRgb(0x4C, 0xAF, 0x50));
-    private static readonly SolidColorBrush BrushPlaying   = new(Color.FromRgb(0x21, 0x96, 0xF3));
-    private static readonly SolidColorBrush BrushEmpty     = new(Color.FromRgb(0x44, 0x44, 0x44));
-    private static readonly SolidColorBrush BrushSpent     = new(Color.FromRgb(0x33, 0x33, 0x33));
+    private static readonly SolidColorBrush BrushCapturing =
+        new(Color.FromRgb(0xC7, 0xA1, 0x4C));
+    private static readonly SolidColorBrush BrushReady =
+        new(Color.FromRgb(0x4C, 0xAF, 0x50));
+    private static readonly SolidColorBrush BrushPlaying =
+        new(Color.FromRgb(0x21, 0x96, 0xF3));
+    private static readonly SolidColorBrush BrushEmpty =
+        new(Color.FromRgb(0x44, 0x44, 0x44));
+    private static readonly SolidColorBrush BrushSpent =
+        new(Color.FromRgb(0x33, 0x33, 0x33));
 
     public MainWindow()
-{
-    InitializeComponent();
-    _settings = AppSettings.Load();
-    LoadSettingsToUI();
-    Log("Ready. Press Start Bridge to begin.");
-
-    // 启动时检测虚拟声卡
-    CheckVBCableOnStartup();
-}
-
-private void CheckVBCableOnStartup()
-{
-    var devices = AudioCaptureService.GetOutputDevices();
-    bool hasVBCable = devices.Any(d =>
-        d.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
-        d.Name.Contains("CABLE", StringComparison.OrdinalIgnoreCase));
-
-    if (!hasVBCable)
     {
-        Log("⚠ 未检测到虚拟声卡（VB-Cable）。");
-        Log("  建议安装以隔离游戏音效，点击 Start Bridge 了解详情。");
+        InitializeComponent();
+        _settings = AppSettings.Load();
+        LoadSettingsToUI();
+        Log("Ready. Press Start Bridge to begin.");
+        CheckVBCableOnStartup();
     }
-    else
+
+    private void CheckVBCableOnStartup()
     {
-        Log("✓ 检测到虚拟声卡，请在 Capture Device 中选择 CABLE Output。");
+        var devices = AudioCaptureService.GetOutputDevices();
+        bool hasVBCable = devices.Any(d =>
+            d.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
+            d.Name.Contains("CABLE", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasVBCable)
+        {
+            Log("⚠ 未检测到虚拟声卡（VB-Cable）。");
+            Log("  建议安装以隔离游戏音效，点击 Start Bridge 了解详情。");
+        }
+        else
+        {
+            Log("✓ 检测到虚拟声卡，请在 Capture Device 中选择 CABLE Output。");
+        }
     }
-}
 
     // ── Button handlers ───────────────────────────────────────────────────────
 
@@ -65,7 +68,6 @@ private void CheckVBCableOnStartup()
             return;
         }
 
-        // 检测虚拟声卡
         var devices = AudioCaptureService.GetOutputDevices();
         bool hasVBCable = devices.Any(d =>
             d.Name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase) ||
@@ -85,9 +87,12 @@ private void CheckVBCableOnStartup()
 
             if (result == MessageBoxResult.Yes)
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://vb-audio.com/Cable/") { UseShellExecute = true });
-                Log("已打开 VB-Cable 下载页面。安装完成后重启程序，在 Capture Device 中选择 CABLE Output。");
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(
+                        "https://vb-audio.com/Cable/")
+                    { UseShellExecute = true });
+                Log("已打开 VB-Cable 下载页面。");
+                Log("安装完成后重启程序，在 Capture Device 中选择 CABLE Output。");
                 return;
             }
         }
@@ -136,7 +141,8 @@ private void CheckVBCableOnStartup()
             StartButton.IsEnabled = true;
             StopButton.IsEnabled  = false;
             StatusText.Text       = "Idle";
-            StatusDot.Fill        = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
+            StatusDot.Fill        =
+                new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88));
         });
         Log("Bridge stopped.");
     }
@@ -157,6 +163,15 @@ private void CheckVBCableOnStartup()
         };
         if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             PathBox.Text = dialog.SelectedPath;
+    }
+
+    private void GainSlider_ValueChanged(object sender,
+        RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (GainLabel == null) return;
+        GainLabel.Text = $"{e.NewValue:F1}x";
+        if (_slotManager != null)
+            _settings.GainFactor = (float)e.NewValue;
     }
 
     // ── Status updates ────────────────────────────────────────────────────────
@@ -185,7 +200,8 @@ private void CheckVBCableOnStartup()
                 };
                 var dot = new Border
                 {
-                    Width               = 40, Height = 40,
+                    Width               = 40,
+                    Height              = 40,
                     CornerRadius        = new CornerRadius(6),
                     Background          = SlotBrush(status.States[i]),
                     HorizontalAlignment = HorizontalAlignment.Center
@@ -204,7 +220,8 @@ private void CheckVBCableOnStartup()
                 {
                     Text                = $"Slot {i}",
                     FontSize            = 10,
-                    Foreground          = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                    Foreground          =
+                        new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin              = new Thickness(0, 4, 0, 0)
                 });
@@ -229,18 +246,20 @@ private void CheckVBCableOnStartup()
     {
         PathBox.Text             = _settings.UserMusicPath;
         AutoStartCheck.IsChecked = _settings.AutoStartCapture;
+        GainSlider.Value         = _settings.GainFactor;
+        GainLabel.Text           = $"{_settings.GainFactor:F1}x";
 
         SelectComboByContent(BitRateBox,   _settings.BitRate.ToString());
         SelectComboByContent(SlotCountBox, _settings.SlotCount.ToString());
 
-        // 加载音频设备列表
         DeviceBox.Items.Clear();
         var devices = AudioCaptureService.GetOutputDevices();
-        foreach (var (id, name) in devices)
+        foreach (var device in devices)
         {
-            var item = new ComboBoxItem { Content = name, Tag = id };
+            var item = new ComboBoxItem
+                { Content = device.Name, Tag = device.Id };
             DeviceBox.Items.Add(item);
-            if (id == _settings.CaptureDeviceId)
+            if (device.Id == _settings.CaptureDeviceId)
                 DeviceBox.SelectedItem = item;
         }
         if (DeviceBox.SelectedItem == null && DeviceBox.Items.Count > 0)
@@ -251,13 +270,20 @@ private void CheckVBCableOnStartup()
     {
         _settings.UserMusicPath    = PathBox.Text.Trim();
         _settings.AutoStartCapture = AutoStartCheck.IsChecked == true;
+        _settings.GainFactor       = (float)GainSlider.Value;
 
-        if (int.TryParse((BitRateBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int br))
+        if (int.TryParse(
+            (BitRateBox.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+            out int br))
             _settings.BitRate = br;
-        if (int.TryParse((SlotCountBox.SelectedItem as ComboBoxItem)?.Content?.ToString(), out int sc))
+
+        if (int.TryParse(
+            (SlotCountBox.SelectedItem as ComboBoxItem)?.Content?.ToString(),
+            out int sc))
             _settings.SlotCount = sc;
 
-        if (DeviceBox.SelectedItem is ComboBoxItem deviceItem && deviceItem.Tag is string deviceId)
+        if (DeviceBox.SelectedItem is ComboBoxItem deviceItem &&
+            deviceItem.Tag is string deviceId)
             _settings.CaptureDeviceId = deviceId;
     }
 
@@ -287,23 +313,25 @@ private void CheckVBCableOnStartup()
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static SolidColorBrush SlotBrush(SlotManager.SlotState state) => state switch
-    {
-        SlotManager.SlotState.Capturing => BrushCapturing,
-        SlotManager.SlotState.Ready     => BrushReady,
-        SlotManager.SlotState.Playing   => BrushPlaying,
-        SlotManager.SlotState.Spent     => BrushSpent,
-        _                               => BrushEmpty
-    };
+    private static SolidColorBrush SlotBrush(SlotManager.SlotState state) =>
+        state switch
+        {
+            SlotManager.SlotState.Capturing => BrushCapturing,
+            SlotManager.SlotState.Ready     => BrushReady,
+            SlotManager.SlotState.Playing   => BrushPlaying,
+            SlotManager.SlotState.Spent     => BrushSpent,
+            _                               => BrushEmpty
+        };
 
-    private static string SlotLabel(SlotManager.SlotState state) => state switch
-    {
-        SlotManager.SlotState.Capturing => "REC",
-        SlotManager.SlotState.Ready     => "RDY",
-        SlotManager.SlotState.Playing   => "▶",
-        SlotManager.SlotState.Spent     => "✓",
-        _                               => "—"
-    };
+    private static string SlotLabel(SlotManager.SlotState state) =>
+        state switch
+        {
+            SlotManager.SlotState.Capturing => "REC",
+            SlotManager.SlotState.Ready     => "RDY",
+            SlotManager.SlotState.Playing   => "▶",
+            SlotManager.SlotState.Spent     => "✓",
+            _                               => "—"
+        };
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
